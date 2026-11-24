@@ -9,6 +9,7 @@ import Sessions from './pages/Sessions'
 import Pulses from './pages/Pulses'
 import Settle from './pages/Settle'
 import Timeout from './pages/Timeout'
+import Abort from './pages/Abort'
 import DaySeal from './pages/DaySeal'
 import Settings from './pages/Settings'
 
@@ -17,7 +18,8 @@ const links = [
   ['/开会话', '开会话'],
   ['/脉冲', '记脉冲'],
   ['/结算', '结算关账'],
-  ['/超时', '超时中断'],
+  ['/中断', '急停中断'],
+  ['/超时', '超时标记'],
   ['/会话', '会话册'],
   ['/桩位', '桩位'],
   ['/枪线', '枪线'],
@@ -49,6 +51,7 @@ export default function App() {
           <Route path="/开会话" element={<OpenSession />} />
           <Route path="/脉冲" element={<Pulses />} />
           <Route path="/结算" element={<Settle />} />
+          <Route path="/中断" element={<Abort />} />
           <Route path="/超时" element={<Timeout />} />
           <Route path="/会话" element={<Sessions />} />
           <Route path="/桩位" element={<Piles />} />

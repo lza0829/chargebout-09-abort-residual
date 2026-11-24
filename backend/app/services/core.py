@@ -54,6 +54,12 @@ def overview(conn) -> dict:
         "SELECT COALESCE(SUM(amount),0) AS a FROM sessions WHERE business_day=? AND status='已关账'",
         (today(),),
     ).fetchone()["a"]
+    # 已中断桶口径与中断页/详情同源：残额取冻结后的 sessions.amount，不在这里另行清零。
+    aborted = conn.execute(
+        """SELECT COUNT(*) AS n, COALESCE(SUM(kwh),0) AS k, COALESCE(SUM(amount),0) AS a,
+                  COALESCE(SUM(CASE WHEN settled_at IS NULL THEN 1 ELSE 0 END),0) AS pending
+           FROM sessions WHERE status='已中断'"""
+    ).fetchone()
     return {
         "桩位空闲": pile_map.get("空闲", 0),
         "桩位占用": pile_map.get("占用", 0),
@@ -63,7 +69,10 @@ def overview(conn) -> dict:
         "结算中": sess_map.get("结算中", 0),
         "已关账": sess_map.get("已关账", 0),
         "已超时": sess_map.get("已超时", 0),
-        "已中断": sess_map.get("已中断", 0),
+        "已中断": int(aborted["n"]),
+        "已中断待收口": int(aborted["pending"]),
+        "已中断残额电量": round(float(aborted["k"]), 3),
+        "已中断残额金额": round(float(aborted["a"]), 2),
         "在充电量": round(float(open_kwh), 3),
         "本日关账金额": round(float(today_amount), 2),
         "营业日": today(),
@@ -162,4 +171,22 @@ def session_detail(conn, session_id: int):
     d = row_dict(se)
     d["脉冲"] = pulses
     d["事件"] = events
+    d["脉冲电量和"] = round(sum(float(p["delta_kwh"]) for p in pulses), 3)
+    d["可结算"] = se["status"] in ("充电中", "结算中", "已超时", "已中断")
+    d["可中断"] = se["status"] in ("充电中", "结算中", "已超时")
+    if se["aborted_at"]:
+        # 详情页与中断页/回执同源，不另算一套残额。
+        d["中断"] = {
+            "时间": se["aborted_at"],
+            "原因": se["abort_reason"],
+            "残额": {
+                "电量": round(float(se["kwh"] or 0), 3),
+                "单价": float(se["price_locked"] or 0),
+                "金额": round(float(se["amount"] or 0), 2),
+            },
+            "待收口": se["status"] == "已中断",
+            "收口时间": se["settled_at"],
+        }
+    else:
+        d["中断"] = None
     return d

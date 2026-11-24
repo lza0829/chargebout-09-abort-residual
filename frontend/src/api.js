@@ -32,6 +32,9 @@ export const api = {
   超时: (id) => req(`/会话/${id}/超时`, { method: 'POST', body: '{}' }),
   中断: (id, 原因 = '急停') =>
     req(`/会话/${id}/中断`, { method: 'POST', body: JSON.stringify({ 原因 }) }),
+  中断回执: (id) => req(`/会话/${id}/中断回执`),
+  中断对账: () => req('/中断对账'),
+  中断会话: () => req('/中断会话'),
   充日: () => req('/充日'),
   封印: (备注 = '') => req('/充日/封印', { method: 'POST', body: JSON.stringify({ 备注 }) }),
   解封: () => req('/充日/解封', { method: 'POST', body: '{}' }),

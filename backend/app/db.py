@@ -52,6 +52,12 @@ CREATE TABLE IF NOT EXISTS sessions (
   started_at TEXT NOT NULL,
   closed_at TEXT,
   note TEXT NOT NULL DEFAULT '',
+  -- 急停中断残额口径（方案 B：保留可结算残额）
+  -- aborted_at/abort_reason 一旦写入即不再改写，用于中断结局重放与审计；
+  -- settled_at 是财务收口时间，与“停止充电”的 closed_at 分开。
+  aborted_at TEXT,
+  abort_reason TEXT,
+  settled_at TEXT,
   FOREIGN KEY(site_id) REFERENCES sites(id),
   FOREIGN KEY(pile_id) REFERENCES piles(id),
   FOREIGN KEY(gun_id) REFERENCES guns(id),
@@ -87,30 +93,87 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 """
 
+INDEXES = """
+CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+CREATE INDEX IF NOT EXISTS idx_sessions_pile ON sessions(pile_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_gun ON sessions(gun_id);
+CREATE INDEX IF NOT EXISTS idx_pulses_session ON pulses(session_id);
+CREATE INDEX IF NOT EXISTS idx_events_session ON session_events(session_id);
+"""
+
+# 旧库迁移：CREATE TABLE IF NOT EXISTS 不会补列。
+_MIGRATIONS = {
+    "sessions": (
+        ("aborted_at", "TEXT"),
+        ("abort_reason", "TEXT"),
+        ("settled_at", "TEXT"),
+    ),
+}
+
 
 def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    # isolation_level=None：所有事务边界由 db()/write_db() 显式掌控。
+    conn = sqlite3.connect(DB_PATH, timeout=5.0, check_same_thread=False, isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
+
+
+def _rollback(conn: sqlite3.Connection) -> None:
+    try:
+        conn.execute("ROLLBACK")
+    except sqlite3.Error:
+        pass
 
 
 @contextmanager
 def db():
+    """一般事务（读或单次写）。"""
     conn = connect()
     try:
+        conn.execute("BEGIN")
         yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
+        conn.execute("COMMIT")
+    except BaseException:
+        _rollback(conn)
         raise
     finally:
         conn.close()
 
 
+@contextmanager
+def write_db():
+    """写事务：BEGIN IMMEDIATE 先拿写锁，串行化读-改-写，避免中断与脉冲对撞。"""
+    conn = connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        yield conn
+        conn.execute("COMMIT")
+    except BaseException:
+        _rollback(conn)
+        raise
+    finally:
+        conn.close()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    for table, cols in _MIGRATIONS.items():
+        have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for name, ddl in cols:
+            if name not in have:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+    conn.executescript(INDEXES)
+
+
 def init_db() -> None:
-    with db() as conn:
+    conn = connect()
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
+        _migrate(conn)
+    finally:
+        conn.close()
 
 
 def row_dict(row: sqlite3.Row | None) -> dict | None:

@@ -7,16 +7,28 @@ from app.services.core import is_day_sealed, now_str, today
 def get_day(conn, day: str | None = None) -> dict:
     d = day or today()
     r = conn.execute("SELECT * FROM day_seals WHERE business_day=?", (d,)).fetchone()
+    # 未结 = 仍在充 + 已中断但残额尚未收口（方案 B：中断残额仍待入账）。
     open_n = conn.execute(
-        "SELECT COUNT(*) AS n FROM sessions WHERE business_day=? AND status IN ('充电中','结算中','已超时')",
+        """SELECT COUNT(*) AS n FROM sessions
+           WHERE business_day=? AND (
+             status IN ('充电中','结算中','已超时')
+             OR (status='已中断' AND settled_at IS NULL)
+           )""",
         (d,),
     ).fetchone()["n"]
+    pending_abort = conn.execute(
+        """SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS a FROM sessions
+           WHERE business_day=? AND status='已中断' AND settled_at IS NULL""",
+        (d,),
+    ).fetchone()
     return {
         "营业日": d,
         "已封印": bool(r and r["sealed"]),
         "封印时间": r["sealed_at"] if r else None,
         "备注": r["note"] if r else "",
         "未结会话数": open_n,
+        "中断待收口数": int(pending_abort["n"]),
+        "中断待收口金额": round(float(pending_abort["a"]), 2),
     }
 
 

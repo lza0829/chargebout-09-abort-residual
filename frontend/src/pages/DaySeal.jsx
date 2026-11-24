@@ -45,6 +45,14 @@ export default function DaySeal() {
             <div className="k">未结会话</div>
             <div className="v">{d.未结会话数}</div>
           </div>
+          <div className="stat">
+            <div className="k">中断待收口</div>
+            <div className="v">{d.中断待收口数}</div>
+          </div>
+          <div className="stat">
+            <div className="k">待收口金额</div>
+            <div className="v">{d.中断待收口金额}</div>
+          </div>
         </div>
         <div className="row">
           <button type="button" className="primary" onClick={seal}>

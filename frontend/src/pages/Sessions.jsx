@@ -1,16 +1,46 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 
 export default function Sessions() {
   const [list, setList] = useState([])
   const [detail, setDetail] = useState(null)
+  const [msg, setMsg] = useState('')
+  const load = useCallback(() => api.会话().then(setList), [])
   useEffect(() => {
-    api.会话().then(setList)
-  }, [])
+    load()
+  }, [load])
+
+  const openDetail = async (id) => {
+    setMsg('')
+    try {
+      const d = await api.会话详情(id)
+      setDetail(d)
+      if (d.中断) {
+        // 详情与中断页/总览同源：直接复算残额对账
+        const r = await api.中断回执(id)
+        setDetail({ ...d, 回执: r })
+      }
+    } catch (e) {
+      setMsg(e.message)
+    }
+  }
+
+  const settle = async (id) => {
+    setMsg('')
+    try {
+      const r = await api.结算(id)
+      setMsg(`已关账：电量 ${r.电量}，金额 ${r.金额}（${r.来源}）`)
+      await load()
+      await openDetail(id)
+    } catch (e) {
+      setMsg(e.message)
+    }
+  }
+
   return (
     <div className="page">
       <h2>会话册</h2>
-      <p className="lead">最近会话列表；点开可看脉冲与事件流水。</p>
+      <p className="lead">最近会话列表；点开可看脉冲与事件流水，中断会话可重放残额对账。</p>
       <div className="panel">
         <table>
           <thead>
@@ -38,7 +68,7 @@ export default function Sessions() {
                 <td>{s.amount}</td>
                 <td>{s.business_day}</td>
                 <td>
-                  <button type="button" onClick={() => api.会话详情(s.id).then(setDetail)}>
+                  <button type="button" onClick={() => openDetail(s.id)}>
                     详情
                   </button>
                 </td>
@@ -46,6 +76,7 @@ export default function Sessions() {
             ))}
           </tbody>
         </table>
+        <p className="msg">{msg}</p>
       </div>
       {detail && (
         <div className="panel">
@@ -53,8 +84,31 @@ export default function Sessions() {
             {detail.slip_no} · <span className={`tag ${detail.status}`}>{detail.status}</span>
           </h3>
           <p>
-            锁定电价 {detail.price_locked} · 电量 {detail.kwh} · 金额 {detail.amount}
+            锁定电价 {detail.price_locked} · 电量 {detail.kwh} · 金额 {detail.amount} · 脉冲电量和{' '}
+            {detail.脉冲电量和}
           </p>
+          {detail.中断 && (
+            <div className="panel" style={{ background: 'var(--panel2)' }}>
+              <h3>中断残额</h3>
+              <p>
+                时间 {detail.中断.时间} · 原因 {detail.中断.原因} · 冻结 电量{' '}
+                {detail.中断.残额.电量} × 单价 {detail.中断.残额.单价} = 金额{' '}
+                {detail.中断.残额.金额}
+              </p>
+              <p className={detail.回执?.对账?.残额可复算 ? 'ok' : 'msg'}>
+                {detail.中断.待收口 ? '待收口（可在结算页收口一次）' : `已收口于 ${detail.中断.收口时间}`}
+                ；回执复算 {detail.回执?.对账?.复算金额}，脉冲电量和相符{' '}
+                {detail.回执?.对账?.脉冲电量和相符 ? '是' : '否'}
+              </p>
+            </div>
+          )}
+          {detail.可结算 && (
+            <div className="row">
+              <button type="button" className="primary" onClick={() => settle(detail.id)}>
+                {detail.status === '已中断' ? '收口残额' : '结算关账'}
+              </button>
+            </div>
+          )}
           <h3>脉冲</h3>
           <table>
             <thead>

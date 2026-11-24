@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../api'
 
 export default function Timeout() {
@@ -17,19 +18,16 @@ export default function Timeout() {
       setMsg(e.message)
     }
   }
-  const abort = async (id) => {
-    try {
-      const r = await api.中断(id, '急停')
-      setMsg(`会话 ${r.会话编号} ${r.状态}`)
-      load()
-    } catch (e) {
-      setMsg(e.message)
-    }
-  }
   return (
     <div className="page">
-      <h2>超时与中断</h2>
-      <p className="lead">对充电中会话标超时，或急停中断并释放占用。</p>
+      <h2>超时标记</h2>
+      <p className="lead">
+        对充电中会话标超时；急停中断请走{' '}
+        <Link to="/中断" style={{ color: 'var(--lime)' }}>
+          急停中断
+        </Link>
+        ，两处结局与残额口径不同。
+      </p>
       <div className="panel">
         <table>
           <thead>
@@ -50,12 +48,9 @@ export default function Timeout() {
                 </td>
                 <td>{s.kwh}</td>
                 <td>{s.started_at}</td>
-                <td className="row" style={{ border: 0 }}>
+                <td>
                   <button type="button" onClick={() => mark(s.id)}>
                     标超时
-                  </button>
-                  <button type="button" className="danger" onClick={() => abort(s.id)}>
-                    急停中断
                   </button>
                 </td>
               </tr>
